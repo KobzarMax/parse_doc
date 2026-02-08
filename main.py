@@ -10,7 +10,7 @@ import json
 import re
 
 app = FastAPI()
-openai.api_key = ""# or hardcode it, not recommended
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 BUILDING_DB = [
     {"id": 1, "address": "Musterstraße 1, 12345 Berlin"},
