@@ -3,7 +3,7 @@
   publish = "site"
 
 [dev]
-  command = "uvicorn netlify.functions.main:app --reload"
+  command = "uvicorn main:app --app-dir netlify/functions --reload"
 
 [[redirects]]
   from = "/api/*"
