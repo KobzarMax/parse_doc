@@ -3,7 +3,7 @@ uvicorn
 python-multipart
 pydantic
 openai
-PyMuPDF
+PyPDF2
 fuzzywuzzy[speedup]
+PyMuPDF
 python-dotenv
-mangum

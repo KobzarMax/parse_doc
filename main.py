@@ -8,10 +8,12 @@ from datetime import datetime
 import os
 import json
 import re
-from mangum import Mangum
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.getenv("OPEN_AI_KEY") # Load from environment variable
 
 BUILDING_DB = [
     {"id": 1, "address": "Musterstraße 1, 12345 Berlin"},
@@ -28,7 +30,7 @@ ALLOCATION_KEYS = {
     "Hausmeister": "Anzahl Wohneinheiten",
     "Sach- & Haftpflichtversicherung": "Anzahl Wohneinheiten",
     "Müllabfuhr": "Anzahl Wohneinheiten",
-    "Aufzüge": "Anzahl Wohneinheiten – Erdgeschoss",
+    "Aufzüge": "Anzahl Wohneinheiten - Erdgeschoss",
     "Straßenreinigung": "Anzahl Wohneinheiten",
     "Gebäudereinigung": "Wohnfläche in qm",
     "Gartenpflege": "Wohnfläche in qm",
@@ -306,5 +308,3 @@ async def process_invoices(
         })
 
     return JSONResponse({"invoices": results})
-
-handler = Mangum(app)
