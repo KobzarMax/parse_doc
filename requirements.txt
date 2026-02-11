@@ -2,7 +2,7 @@ fastapi
 uvicorn
 python-multipart
 pydantic
-openai
+openai>=1.0.0
 PyPDF2
 fuzzywuzzy[speedup]
 PyMuPDF

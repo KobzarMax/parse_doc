@@ -7,17 +7,14 @@ import PyPDF2
 #         text += page.extract_text() or ''
 #     return text
 
-import openai
+from openai import OpenAI
 import os
 from fastapi import UploadFile
 
 # Ensure your OpenAI API key is set
-openai.api_key = os.getenv("")  # or hardcode it, not recommended
+client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 
 async def extract_text_from_pdf(file: UploadFile) -> str:
-    import openai
-    import os
-
     # Save file to disk synchronously
     temp_file_path = f"/tmp/{file.filename}"
     with open(temp_file_path, "wb") as out_file:
@@ -25,11 +22,11 @@ async def extract_text_from_pdf(file: UploadFile) -> str:
 
     # Upload to OpenAI
     with open(temp_file_path, "rb") as f:
-        upload_response = openai.files.create(file=f, purpose="assistants")
+        upload_response = client.files.create(file=f, purpose="assistants")
         file_id = upload_response.id
 
     # Call OpenAI API
-    response = openai.chat.completions.create(
+    response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
             {
@@ -46,6 +43,7 @@ async def extract_text_from_pdf(file: UploadFile) -> str:
     os.remove(temp_file_path)
 
     return response.choices[0].message.content
+
 
 
 

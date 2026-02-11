@@ -2,7 +2,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Header
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 import fitz  # PyMuPDF
-import openai
+from openai import OpenAI
 from fuzzywuzzy import fuzz
 from datetime import datetime
 import os
@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI()
-openai.api_key = os.getenv("OPEN_AI_KEY") # Load from environment variable
+client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 
 BUILDING_DB = [
     {"id": 1, "address": "Musterstraße 1, 12345 Berlin"},
@@ -56,12 +56,12 @@ def determine_cost_category(text: str) -> str:
         f"Analysiere den folgenden Rechnungstext und bestimme, "
         f"welche dieser Kostenarten zutrifft:\n{', '.join(categories)}\n\n{text}"
     )
-    resp = openai.ChatCompletion.create(
+    resp = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
     )
-    content = resp.choices[0].message["content"]
+    content = resp.choices[0].message.content
     for c in categories:
         if c.lower() in content.lower():
             return c
@@ -87,14 +87,14 @@ INVOICE_SCHEMA = {
 }
 
 def extract_invoice_data_via_llm(text: str) -> dict:
-    resp = openai.ChatCompletion.create(
+    resp = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": text}],
         functions=[INVOICE_SCHEMA],
         function_call={"name": "extract_invoice_data"},
         temperature=0
     )
-    args = resp.choices[0].message.get("function_call", {}).get("arguments", "{}")
+    args = resp.choices[0].message.function_call.arguments
     return json.loads(args)
 
 def check_apartment_vs_building(text: str) -> dict:
@@ -131,7 +131,7 @@ def check_apartment_vs_building(text: str) -> dict:
     )
     
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0
@@ -204,7 +204,7 @@ def validate_invoice_via_llm(text: str) -> dict:
     )
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0
