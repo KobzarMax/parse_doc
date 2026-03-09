@@ -50,6 +50,19 @@ def match_building(address: str):
             best, score = b, s
     return best if score > 50 else None
 
+def match_apartment(address: str, apartments_list: List[dict]) -> Optional[dict]:
+    """Find best matching apartment from the provided list by address."""
+    if not apartments_list or not address:
+        return None
+    best, score = None, 0
+    for apt in apartments_list:
+        apt_addr = apt.get("address", "")
+        if apt_addr:
+            s = fuzz.partial_ratio(address.lower(), apt_addr.lower())
+            if s > score:
+                best, score = apt, s
+    return best if score > 50 else None
+
 def determine_cost_category(text: str, categories: Optional[List[str]] = None) -> str:
     """Use the list of category names for the prediction. Falls back to the default keys."""
     if categories is None:
@@ -173,7 +186,8 @@ def check_apartment_vs_building(text: str) -> dict:
 
 def validate_invoice_via_llm(text: str) -> dict:
     """
-    Enhanced validation that includes building vs apartment check
+    Enhanced validation that includes building vs apartment check.
+    For apartment invoices, returns is_apartment: True so endpoint can match against list.
     """
     # First check if it's for whole building or individual apartment
     building_check = check_apartment_vs_building(text)
@@ -181,6 +195,7 @@ def validate_invoice_via_llm(text: str) -> dict:
     if not building_check["is_whole_building"]:
         return {
             "validated": False,
+            "is_apartment": True,
             "reason": f"Rechnung ist für eine einzelne Wohnung/Apartment, nicht für das gesamte Gebäude. {building_check['reason']}",
             "building_check": building_check
         }
@@ -213,7 +228,8 @@ def validate_invoice_via_llm(text: str) -> dict:
         )
     except Exception as e:
         return {
-            "validated": False, 
+            "validated": False,
+            "is_apartment": False,
             "reason": f"API call failed: {str(e)}",
             "building_check": building_check
         }
@@ -231,12 +247,14 @@ def validate_invoice_via_llm(text: str) -> dict:
         parsed = json.loads(raw)
         return {
             "validated": parsed.get("is_valid", False),
+            "is_apartment": False,
             "reason": parsed.get("reason", "No reason provided."),
             "building_check": building_check
         }
     except Exception as e:
         return {
             "validated": False,
+            "is_apartment": False,
             "reason": f"LLM response parse failed: {str(e)} - RAW: {raw}",
             "building_check": building_check
         }
@@ -287,7 +305,16 @@ async def process_invoices(
             continue
 
         validation = validate_invoice_via_llm(text)
-        if not validation["validated"]:
+        
+        # Handle apartment invoices: try to match if apartments list provided
+        matched_apartment = None
+        if validation.get("is_apartment") and apartments_data:
+            address_from_llm = fields.get("address")
+            if address_from_llm:
+                matched_apartment = match_apartment(address_from_llm, apartments_data)
+        
+        # If not a valid building invoice AND not a matched apartment, flag for review
+        if not validation["validated"] and not matched_apartment:
             result = {
                 "file": up.filename,
                 "validated": False,
@@ -295,35 +322,39 @@ async def process_invoices(
                 "building_check": validation.get("building_check", {}),
                 "flag_for_manual_review": True
             }
-            # if apartments were provided by frontend, echo them back
+            # include apartments list in response if provided
             if apartments_data is not None:
                 result["apartments"] = apartments_data
 
-                # try to match the extracted address against the provided list
-                addr = fields.get("address") or address_from_llm if ("address_from_llm" in locals()) else None
-                if addr:
-                    for apt in apartments_data:
-                        if apt.get("address") and apt["address"].lower() in addr.lower():
-                            result["matched_apartment"] = apt
-                            break
-
             results.append(result)
             continue
-
+        
+        # Process data extraction for both building and matched apartment invoices
         address_from_llm = fields.get("address")
         if not address_from_llm:
             match = re.search(r"Versicherungsort[:\s]+(.+)", text, re.IGNORECASE)
             address_from_llm = match.group(1).strip() if match else None
 
-        building = match_building(address_from_llm or "")
-        if not building:
-            results.append({
-                "file": up.filename,
-                "validated": True,
-                "error": "Address not matched",
-                "flag_for_manual_review": True
-            })
-            continue
+        # Determine target (building or apartment)
+        target = None
+        target_type = None
+        if matched_apartment:
+            target = matched_apartment
+            target_type = "apartment"
+        else:
+            building = match_building(address_from_llm or "")
+            if building:
+                target = building
+                target_type = "building"
+            else:
+                # No match found, flag for review
+                results.append({
+                    "file": up.filename,
+                    "validated": True,
+                    "error": "Address not matched to any building or apartment",
+                    "flag_for_manual_review": True
+                })
+                continue
 
         # use provided category names if available when asking the model
         category = determine_cost_category(text, provided_category_names)
@@ -334,7 +365,8 @@ async def process_invoices(
         results.append({
             "file":           up.filename,
             "validated":      True,
-            "building":       building,
+            "target":         target,
+            "target_type":    target_type,
             "year":           year,
             "draft_action":   action,
             "cost_category":  category,
