@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Header, Form
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 import fitz  # PyMuPDF
 from openai import OpenAI
@@ -13,6 +14,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI()
+
+# Add CORS middleware to allow requests from any origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
 client = OpenAI(api_key=os.getenv("OPEN_AI_KEY"))
 
 BUILDING_DB = [
@@ -384,3 +395,7 @@ async def process_invoices(
         })
 
     return JSONResponse({"invoices": results})
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "healthy"}

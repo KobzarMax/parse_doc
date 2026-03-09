@@ -14,8 +14,6 @@ A FastAPI application for processing building invoices using AI and optional use
 Set these in your Vercel project settings:
 
 - `OPEN_AI_KEY`: Your OpenAI API key
-- `SUPABASE_URL`: Your Supabase project URL
-- `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_ANON_KEY`: Your Supabase service role key
 
 ### Deployment Steps
 
