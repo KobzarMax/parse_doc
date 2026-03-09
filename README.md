@@ -5,10 +5,12 @@ A FastAPI application for processing building invoices using AI and optional use
 ## Deployment to Vercel
 
 ### Prerequisites
+
 - Vercel account
 - Supabase project with required tables
 
 ### Environment Variables
+
 Set these in your Vercel project settings:
 
 - `OPEN_AI_KEY`: Your OpenAI API key
@@ -18,6 +20,7 @@ Set these in your Vercel project settings:
 ### Deployment Steps
 
 1. **Push your code to GitHub**
+
    ```bash
    git add .
    git commit -m "Prepare for Vercel deployment"
@@ -32,13 +35,15 @@ Set these in your Vercel project settings:
 
 3. **API Endpoints**
    - `POST /api/invoices/process/` - Process invoice PDFs. Accepts multipart/form-data with:
-     * `files` (PDFs)
-     * optional `costCategories` JSON string containing an array of user-defined cost category objects
+     - `files` (PDFs)
+     - optional `costCategories` JSON string containing an array of user-defined cost category objects
+     - optional `apartments` JSON string with array of apartment objects (frontend can supply list of units to help when invoice is for individual apartment)
    - `GET /api/health` - Health check
 
 ### Local Development
 
 1. Install dependencies:
+
    ```bash
    pip install -r requirements.txt
    ```
@@ -53,6 +58,7 @@ Set these in your Vercel project settings:
 ## API Usage
 
 ### Process Invoices
+
 ```bash
 curl -X POST "https://your-app.vercel.app/api/invoices/process/" \
   -F "files=@invoice.pdf" \

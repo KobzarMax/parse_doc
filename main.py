@@ -245,6 +245,7 @@ def validate_invoice_via_llm(text: str) -> dict:
 async def process_invoices(
     files: List[UploadFile] = File(...),
     costCategories: Optional[str] = Form(None),
+    apartments: Optional[str] = Form(None),
     authorization: str = Header(None),
 ):
     # parse user-supplied categories (JSON string) if present
@@ -257,6 +258,14 @@ async def process_invoices(
             provided_category_names = [item.get("name") for item in parsed if "name" in item]
         except ValueError:
             raise HTTPException(400, "costCategories must be valid JSON")
+
+    # parse optional apartments list from frontend
+    apartments_data = None
+    if apartments:
+        try:
+            apartments_data = json.loads(apartments)
+        except ValueError:
+            raise HTTPException(400, "apartments must be valid JSON")
 
     results = []
     for up in files:
@@ -279,13 +288,26 @@ async def process_invoices(
 
         validation = validate_invoice_via_llm(text)
         if not validation["validated"]:
-            results.append({
+            result = {
                 "file": up.filename,
                 "validated": False,
                 "reason": validation["reason"],
                 "building_check": validation.get("building_check", {}),
                 "flag_for_manual_review": True
-            })
+            }
+            # if apartments were provided by frontend, echo them back
+            if apartments_data is not None:
+                result["apartments"] = apartments_data
+
+                # try to match the extracted address against the provided list
+                addr = fields.get("address") or address_from_llm if ("address_from_llm" in locals()) else None
+                if addr:
+                    for apt in apartments_data:
+                        if apt.get("address") and apt["address"].lower() in addr.lower():
+                            result["matched_apartment"] = apt
+                            break
+
+            results.append(result)
             continue
 
         address_from_llm = fields.get("address")
