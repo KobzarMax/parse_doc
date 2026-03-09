@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Header
+from fastapi import FastAPI, File, UploadFile, HTTPException, Header, Form
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 import fitz  # PyMuPDF
@@ -50,8 +50,10 @@ def match_building(address: str):
             best, score = b, s
     return best if score > 50 else None
 
-def determine_cost_category(text: str) -> str:
-    categories = list(ALLOCATION_KEYS.keys())
+def determine_cost_category(text: str, categories: Optional[List[str]] = None) -> str:
+    """Use the list of category names for the prediction. Falls back to the default keys."""
+    if categories is None:
+        categories = list(ALLOCATION_KEYS.keys())
     prompt = (
         f"Analysiere den folgenden Rechnungstext und bestimme, "
         f"welche dieser Kostenarten zutrifft:\n{', '.join(categories)}\n\n{text}"
@@ -242,8 +244,20 @@ def validate_invoice_via_llm(text: str) -> dict:
 @app.post("/api/invoices/process/")
 async def process_invoices(
     files: List[UploadFile] = File(...),
+    costCategories: Optional[str] = Form(None),
     authorization: str = Header(None),
 ):
+    # parse user-supplied categories (JSON string) if present
+    allocation_map = ALLOCATION_KEYS.copy()
+    provided_category_names: Optional[List[str]] = None
+    if costCategories:
+        try:
+            parsed = json.loads(costCategories)
+            allocation_map = {item.get("name"): item.get("allocation_key", "Unknown") for item in parsed if "name" in item}
+            provided_category_names = [item.get("name") for item in parsed if "name" in item]
+        except ValueError:
+            raise HTTPException(400, "costCategories must be valid JSON")
+
     results = []
     for up in files:
         if not up.filename.lower().endswith(".pdf"):
@@ -289,8 +303,9 @@ async def process_invoices(
             })
             continue
 
-        category = determine_cost_category(text)
-        allocation_key = ALLOCATION_KEYS.get(category, "Unknown")
+        # use provided category names if available when asking the model
+        category = determine_cost_category(text, provided_category_names)
+        allocation_key = allocation_map.get(category, "Unknown")
         year = datetime.now().year
         action = "appended to existing draft"
 
@@ -302,6 +317,7 @@ async def process_invoices(
             "draft_action":   action,
             "cost_category":  category,
             "allocation_key": allocation_key,
+            "provided_categories": provided_category_names,
             "building_check": validation.get("building_check", {}),
             **fields,
             "validation_reason": validation["reason"]
