@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+mangum
 python-multipart
 pydantic
 openai>=1.0.0
@@ -7,3 +8,4 @@ PyPDF2
 fuzzywuzzy[speedup]
 PyMuPDF
 python-dotenv
+supabase
