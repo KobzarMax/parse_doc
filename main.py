@@ -74,24 +74,61 @@ def match_apartment(address: str, apartments_list: List[dict]) -> Optional[dict]
                 best, score = apt, s
     return best if score > 50 else None
 
-def determine_cost_category(text: str, categories: Optional[List[str]] = None) -> str:
-    """Use the list of category names for the prediction. Falls back to the default keys."""
-    if categories is None:
+def determine_cost_category(text: str, category_data: Optional[List[dict]] = None) -> tuple[str, Optional[str]]:
+    """
+    Use the list of category objects for prediction. 
+    Each category_data item can have 'name' and 'options'.
+    Returns (category_name, option_name).
+    """
+    if not category_data:
+        # Fallback to default categories if none provided
         categories = list(ALLOCATION_KEYS.keys())
-    prompt = (
-        f"Analysiere den folgenden Rechnungstext und bestimme, "
-        f"welche dieser Kostenarten zutrifft:\n{', '.join(categories)}\n\n{text}"
-    )
-    resp = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
-    content = resp.choices[0].message.content
-    for c in categories:
-        if c.lower() in content.lower():
-            return c
-    return "Sonstiges"
+        prompt = (
+            f"Analysiere den folgenden Rechnungstext und bestimme, "
+            f"welche dieser Kostenarten zutrifft:\n{', '.join(categories)}\n\n{text}"
+        )
+    else:
+        # Build a detailed prompt with options
+        categories_with_options = []
+        for cat in category_data:
+            name = cat.get("name")
+            opts = cat.get("options", [])
+            if opts:
+                categories_with_options.append(f"- {name} (Optionen: {', '.join(opts)})")
+            else:
+                categories_with_options.append(f"- {name}")
+        
+        prompt = (
+            "Analysiere den folgenden Rechnungstext und bestimme die zutreffende Kostenart sowie die spezifische Option.\n\n"
+            "Verfügbare Kostenarten und Optionen:\n" + "\n".join(categories_with_options) + "\n\n"
+            "Gib deine Antwort im JSON-Format zurück:\n"
+            "{\n"
+            "  \"category\": \"Name der Kostenart\",\n"
+            "  \"option\": \"Name der spezifischen Option (falls zutreffend, sonst null)\"\n"
+            "}\n\n"
+            f"Rechnungstext:\n{text}"
+        )
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            response_format={"type": "json_object"} if category_data else None
+        )
+        content = resp.choices[0].message.content
+        
+        if not category_data:
+            for c in categories:
+                if c.lower() in content.lower():
+                    return c, None
+            return "Sonstiges", None
+        
+        parsed = json.loads(content)
+        return parsed.get("category", "Sonstiges"), parsed.get("option")
+    except Exception as e:
+        print(f"Error in determine_cost_category: {e}")
+        return "Sonstiges", None
 
 INVOICE_SCHEMA = {
     "name": "extract_invoice_data",
@@ -285,12 +322,11 @@ async def process_invoices(
 ):
     # parse user-supplied categories (JSON string) if present
     allocation_map = ALLOCATION_KEYS.copy()
-    provided_category_names: Optional[List[str]] = None
+    provided_categories: Optional[List[dict]] = None
     if costCategories:
         try:
-            parsed = json.loads(costCategories)
-            allocation_map = {item.get("name"): item.get("allocation_key", "Unknown") for item in parsed if "name" in item}
-            provided_category_names = [item.get("name") for item in parsed if "name" in item]
+            provided_categories = json.loads(costCategories)
+            allocation_map = {item.get("name"): item.get("allocation_key", "Unknown") for item in provided_categories if "name" in item}
         except ValueError:
             raise HTTPException(400, "costCategories must be valid JSON")
 
@@ -373,8 +409,8 @@ async def process_invoices(
                 })
                 continue
 
-        # use provided category names if available when asking the model
-        category = determine_cost_category(text, provided_category_names)
+        # Determine cost category and specific option
+        category, option = determine_cost_category(text, provided_categories)
         allocation_key = allocation_map.get(category, "Unknown")
         year = datetime.now().year
         action = "appended to existing draft"
@@ -387,8 +423,9 @@ async def process_invoices(
             "year":           year,
             "draft_action":   action,
             "cost_category":  category,
+            "cost_category_option": option,
             "allocation_key": allocation_key,
-            "provided_categories": provided_category_names,
+            "provided_categories": provided_categories,
             "building_check": validation.get("building_check", {}),
             **fields,
             "validation_reason": validation["reason"]
